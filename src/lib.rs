@@ -5,7 +5,6 @@ mod entity_grid2;
 mod grid2;
 mod neighbors;
 mod rowcol;
-mod shader_material;
 mod smallset;
 mod sparse_grid2;
 mod spec;
@@ -21,9 +20,6 @@ pub use {
         Collisions, Neighbor, NeighborLayerMask, NeighborRadius, Neighbors, NeighborsSystem,
     },
     rowcol::{RowCol, RowColDistance},
-    shader_material::{
-        GridShaderAssets, GridShaderMaterial, GridShaderMaterialPlugin, GridShaderPlane,
-    },
     sparse_grid2::SparseGrid2,
     spec::SpatialGridSpec,
 };
