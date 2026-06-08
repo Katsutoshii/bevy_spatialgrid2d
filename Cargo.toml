@@ -2,6 +2,15 @@
 edition = "2024"
 name = "bevy_spatialgrid2d"
 version = "0.18.0"
+authors = ["Josiah Putman <joshikatsu@gmail.com>"]
+description = "Create meshes from heightmap PNGs in the Bevy game engine."
+documentation = "https://docs.rs/bevy_spatialgrid2d/latest/bevy_spatialgrid2d"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/Katsutoshii/bevy_spatialgrid2d"
+repository = "https://github.com/Katsutoshii/bevy_spatialgrid2d"
+keywords = ["bevy"]
+readme = "README.md"
+exclude = ["assets/*", "docs/**/*.png"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
