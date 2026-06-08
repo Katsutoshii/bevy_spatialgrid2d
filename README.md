@@ -5,12 +5,7 @@
 [![Docs](https://docs.rs/bevy_spatialgrid2d/badge.svg)](https://docs.rs/bevy_spatialgrid2d/latest/bevy_spatialgrid2d/)
 
 
-Simple Newtonian Physics simulator for Bevy game engine.
-
-This doesn't actually implement any collision calculations, just defines some common types for position, velocity, force, rotation, angular velocity, and torque
-and implements propagation to Bevy's `Transform`.
-
-Forces (and Torques) are applied in `PhysicsSystem::ApplyForces` once per frame, so schedule your systems before it.
+Spatial grid for faster nearest neighbor queries for the Bevy Engine.
 
 ## Examples
 
