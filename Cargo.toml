@@ -1,0 +1,30 @@
+[package]
+edition = "2024"
+name = "bevy_spatialgrid2d"
+version = "0.18.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+    "std",
+    "bevy_log",
+    "bevy_render",
+    "bevy_pbr",
+    "bevy_state",
+] }
+bevy_newtonian2d = { version = "0.18.1" }
+
+rand = { version = "0.8" }
+smallvec = { version = "1" }
+
+[dev-dependencies]
+bevy = { version = "0.18", default-features = true, features = [
+    "file_watcher",
+    "bevy_dev_tools",
+] }
+bevy-inspector-egui = { version = "0.36" }
+bevy_egui = { version = "0.39" }
+
+[[example]]
+name = "boids"
