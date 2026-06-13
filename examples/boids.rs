@@ -17,7 +17,7 @@ use bevy::{
         query::{QueryData, Without},
         resource::Resource,
         schedule::IntoScheduleConfigs,
-        system::{Commands, Query, Res, ResMut},
+        system::{Commands, Query, Res},
         world::{DeferredWorld, FromWorld, World},
     },
     gizmos::gizmos::Gizmos,
@@ -25,7 +25,7 @@ use bevy::{
     mesh::{Mesh, Mesh2d},
     reflect::Reflect,
     sprite_render::{ColorMaterial, MeshMaterial2d},
-    state::{condition::in_state, state::NextState},
+    state::{app::AppExtStates, condition::in_state},
     utils::default,
 };
 use bevy_egui::EguiPlugin;
@@ -55,6 +55,7 @@ fn main() {
                 },
             },
         ))
+        .insert_state(PhysicsSimulationState::Running)
         .insert_resource(SpatialGridSpec {
             cols: 32,
             rows: 32,
@@ -68,7 +69,7 @@ fn main() {
 }
 
 /// Spawn a camera and a ton of Boids.
-fn setup(mut commands: Commands, mut state: ResMut<NextState<PhysicsSimulationState>>) {
+fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let y_max = 32;
     let x_max = 32;
@@ -82,7 +83,6 @@ fn setup(mut commands: Commands, mut state: ResMut<NextState<PhysicsSimulationSt
             ));
         }
     }
-    state.set(PhysicsSimulationState::Running);
 }
 
 /// Draw the grid gizmo.
@@ -119,7 +119,6 @@ struct BoidAssets {
 impl FromWorld for BoidAssets {
     fn from_world(world: &mut World) -> Self {
         Self {
-            // mesh: world.add_asset(Circle { radius: 4.0 }),
             mesh: world.add_asset(RegularPolygon::new(4.0, 3)),
             material: world.add_asset(ColorMaterial::from_color(Color::WHITE)),
         }

@@ -9,20 +9,34 @@ mod smallset;
 mod sparse_grid2;
 mod spec;
 
+mod grid2_shader;
+
 pub use {
     aabb2::Aabb2,
-    entity_grid2::{
-        EntityGridEvent, EntityGridLayer, EntityGridLayers, EntityGridSystem, EntitySet,
-        EntitySetsGrid, GridEntity,
-    },
     grid2::SpatialGrid2,
-    neighbors::{
-        Collisions, Neighbor, NeighborLayerMask, NeighborRadius, Neighbors, NeighborsSystem,
-    },
     rowcol::{RowCol, RowColDistance},
-    sparse_grid2::SparseGrid2,
     spec::SpatialGridSpec,
 };
+
+#[cfg(feature = "shader")]
+pub use grid2_shader::{
+    SpatialGridShaderAssets, SpatialGridShaderMaterial, SpatialGridShaderMaterialPlugin,
+    SpatialGridShaderPlane,
+};
+
+#[cfg(feature = "entity")]
+pub use entity_grid2::{
+    EntityGridEvent, EntityGridLayer, EntityGridLayers, EntityGridSystem, EntitySet,
+    EntitySetsGrid, GridEntity,
+};
+
+#[cfg(feature = "neighbors")]
+pub use neighbors::{
+    Collisions, Neighbor, NeighborLayerMask, NeighborRadius, Neighbors, NeighborsSystem,
+};
+
+#[cfg(feature = "sparse")]
+pub use sparse_grid2::SparseSpatialGrid2;
 
 /// Plugin for an spacial entity paritioning grid with optional debug functionality.
 pub struct SpatialGrid2dPlugin;
