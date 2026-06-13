@@ -21,7 +21,7 @@ use bevy::{
         world::{DeferredWorld, FromWorld, World},
     },
     gizmos::gizmos::Gizmos,
-    math::{Isometry2d, UVec2, Vec2, primitives::Circle},
+    math::{Isometry2d, UVec2, Vec2, primitives::RegularPolygon},
     mesh::{Mesh, Mesh2d},
     reflect::Reflect,
     sprite_render::{ColorMaterial, MeshMaterial2d},
@@ -31,8 +31,8 @@ use bevy::{
 use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_newtonian2d::{
-    CircleCollider, Force2, PhysicsMaterial, PhysicsSimulationState, PhysicsSystem, Position2,
-    Static, Velocity2,
+    AngularVelocity2, CircleCollider, Force2, PhysicsMaterial, PhysicsSimulationState,
+    PhysicsSystem, Position2, Rotation2, Static, Torque2, Velocity2,
 };
 use bevy_spatialgrid2d::{
     Collisions, NeighborRadius, Neighbors, SpatialGrid2dPlugin, SpatialGridSpec,
@@ -56,9 +56,9 @@ fn main() {
             },
         ))
         .insert_resource(SpatialGridSpec {
-            cols: 16,
-            rows: 16,
-            width: 32.0,
+            cols: 32,
+            rows: 32,
+            width: 16.0,
         })
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<BoidAssets>()
@@ -70,9 +70,9 @@ fn main() {
 /// Spawn a camera and a ton of Boids.
 fn setup(mut commands: Commands, mut state: ResMut<NextState<PhysicsSimulationState>>) {
     commands.spawn(Camera2d);
-    let y_max = 16;
-    let x_max = 16;
-    let step_size = 6.0;
+    let y_max = 32;
+    let x_max = 32;
+    let step_size = 12.0;
     for y in -(y_max / 2)..(y_max / 2) {
         for x in -(x_max / 2)..(x_max / 2) {
             commands.spawn((
@@ -119,7 +119,8 @@ struct BoidAssets {
 impl FromWorld for BoidAssets {
     fn from_world(world: &mut World) -> Self {
         Self {
-            mesh: world.add_asset(Circle { radius: 4.0 }),
+            // mesh: world.add_asset(Circle { radius: 4.0 }),
+            mesh: world.add_asset(RegularPolygon::new(4.0, 3)),
             material: world.add_asset(ColorMaterial::from_color(Color::WHITE)),
         }
     }
@@ -147,6 +148,8 @@ pub struct Boid {
     pub boundary_force_factor: f32,
     pub global_force_factor: f32,
     pub vortex_force_factor: f32,
+    pub torque_factor: f32,
+    pub angular_velocity_break: f32,
 }
 impl Default for Boid {
     fn default() -> Self {
@@ -158,6 +161,8 @@ impl Default for Boid {
             boundary_force_factor: 0.4,
             global_force_factor: 0.1,
             vortex_force_factor: 0.001,
+            torque_factor: 0.03,
+            angular_velocity_break: 30.0,
         }
     }
 }
@@ -173,14 +178,15 @@ impl Boid {
 
     /// Fixed update Boid simulation.
     fn fixed_update(
-        mut query: Query<(BoidQueryData, &mut Force2), Without<Static>>,
+        mut query: Query<(BoidQueryData, &mut Force2, &mut Torque2), Without<Static>>,
         others: Query<(&Boid, &CircleCollider, &Velocity2)>,
         grid_spec: Res<SpatialGridSpec>,
     ) {
         query
             .par_iter_mut()
-            .for_each(|(boid_query_data, mut force)| {
+            .for_each(|(boid_query_data, mut force, mut torque)| {
                 *force += boid_query_data.compute_forces(&others, &grid_spec);
+                *torque += boid_query_data.compute_torque();
             });
     }
 
@@ -241,7 +247,9 @@ impl Boid {
     /// Compute vortex force.
     /// This spins the Boids around the origin.
     fn vortex_force(&self, position: &Position2) -> Force2 {
-        Force2(Vec2::from_angle(PI / 2.0).rotate(position.0)) * self.vortex_force_factor
+        let spin_force = Force2(Vec2::from_angle(PI / 2.0).rotate(position.0));
+        let pull_force = Force2(-position.0);
+        (spin_force + pull_force) * self.vortex_force_factor
     }
 }
 
@@ -251,6 +259,8 @@ struct BoidQueryData {
     boid: &'static Boid,
     position: &'static Position2,
     velocity: &'static Velocity2,
+    rotation: &'static Rotation2,
+    angular_velocity: &'static AngularVelocity2,
     collider: &'static CircleCollider,
     neighbor_radius: &'static NeighborRadius,
     neighbors: &'static Neighbors,
@@ -305,5 +315,12 @@ impl BoidQueryDataItem<'_, '_> {
         total_force += self.boid.boundary_force(self.position, grid_spec);
         total_force += self.boid.vortex_force(self.position);
         total_force * self.boid.global_force_factor
+    }
+
+    /// Computes torque on the Boid.
+    fn compute_torque(&self) -> Torque2 {
+        (Torque2::towards(*self.rotation, Rotation2(self.velocity.0))
+            - (*self.angular_velocity * self.boid.angular_velocity_break))
+            * self.boid.torque_factor
     }
 }
