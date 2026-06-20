@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::load_shader_library;
 
 use crate::{SpatialGridSpec, SpatialGridState};
@@ -36,7 +36,7 @@ pub trait SpatialGridShaderMaterial: Material + FromWorld {
     }
 
     /// Resize the grid based on the grid spec.
-    fn resize(&mut self, spec: &SpatialGridSpec, storage_buffers: &mut Assets<ShaderStorageBuffer>);
+    fn resize(&mut self, spec: &SpatialGridSpec, storage_buffers: &mut Assets<ShaderBuffer>);
 
     /// When the spec is changed, respawn the visualizer entity with the new size.
     fn resize_on_change(
@@ -44,10 +44,10 @@ pub trait SpatialGridShaderMaterial: Material + FromWorld {
         assets: Res<SpatialGridShaderAssets<Self>>,
         mut transform: Single<&mut Transform, With<SpatialGridShaderPlane<Self>>>,
         mut shader_assets: ResMut<Assets<Self>>,
-        mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+        mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     ) -> Result {
         transform.scale = Self::scale(&spec);
-        let material = shader_assets.get_mut(&assets.shader_material).unwrap();
+        let mut material = shader_assets.get_mut(&assets.shader_material).unwrap();
         material.resize(&spec, &mut storage_buffers);
         Ok(())
     }

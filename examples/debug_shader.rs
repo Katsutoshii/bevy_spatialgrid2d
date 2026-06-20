@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 use bevy::color::palettes::css::{DARK_GRAY, WHITE};
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
-use bevy::render::{render_resource::AsBindGroup, storage::ShaderStorageBuffer};
+use bevy::render::{render_resource::AsBindGroup, storage::ShaderBuffer};
 use bevy::shader::ShaderRef;
 use bevy::{
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
@@ -211,7 +211,7 @@ struct GridVisualizerMaterial {
     #[uniform(1)]
     size: SpatialGridSpec,
     #[storage(2, read_only)]
-    grid_handle: Handle<ShaderStorageBuffer>,
+    grid_handle: Handle<ShaderBuffer>,
     grid: Vec<u32>,
 }
 impl FromWorld for GridVisualizerMaterial {
@@ -226,14 +226,10 @@ impl FromWorld for GridVisualizerMaterial {
     }
 }
 impl SpatialGridShaderMaterial for GridVisualizerMaterial {
-    fn resize(
-        &mut self,
-        spec: &SpatialGridSpec,
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
-    ) {
+    fn resize(&mut self, spec: &SpatialGridSpec, storage_buffers: &mut Assets<ShaderBuffer>) {
         self.size = spec.clone();
         self.grid.resize(spec.rows as usize * spec.cols as usize, 0);
-        let buffer = storage_buffers.get_mut(&self.grid_handle).unwrap();
+        let mut buffer = storage_buffers.get_mut(&self.grid_handle).unwrap();
         buffer.set_data(self.grid.clone());
     }
 }
@@ -244,10 +240,10 @@ impl GridVisualizerMaterial {
         assets: Res<SpatialGridShaderAssets<Self>>,
         mut shader_assets: ResMut<Assets<Self>>,
         mut grid_events: MessageReader<EntityGridEvent>,
-        mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+        mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
         neighbor_radii: Query<&NeighborRadius>,
     ) {
-        let material = shader_assets.get_mut(&assets.shader_material).unwrap();
+        let mut material = shader_assets.get_mut(&assets.shader_material).unwrap();
         for event in grid_events.read() {
             if let Some(rowcol) = event.prev_rowcol {
                 if event.prev_empty {
@@ -264,7 +260,7 @@ impl GridVisualizerMaterial {
                 material.grid[grid_spec.flat_index(rowcol)] = 3;
             }
         }
-        let buffer = storage_buffers.get_mut(&material.grid_handle).unwrap();
+        let mut buffer = storage_buffers.get_mut(&material.grid_handle).unwrap();
         buffer.set_data(material.grid.clone());
     }
 }
