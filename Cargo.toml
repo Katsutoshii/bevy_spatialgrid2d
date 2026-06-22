@@ -36,6 +36,7 @@ shader = ["bevy/bevy_pbr", "bevy/bevy_render"]
 bevy = { version = "0.19", default-features = true, features = [
     "file_watcher",
     "bevy_dev_tools",
+    "dynamic_linking",
 ] }
 bevy-inspector-egui = { version = "0.37" }
 bevy_egui = { version = "0.40" }
