@@ -37,14 +37,15 @@ impl Aabb2 {
             && (self.min.y <= point.y && point.y < self.max.y)
     }
     /// Clamp a 2d vector to the bounding box.
-    pub fn clamp2(&self, vec: &mut Vec2) {
-        vec.x = vec.x.clamp(self.min.x, self.max.x);
-        vec.y = vec.y.clamp(self.min.y, self.max.y);
+    pub fn clamp2(&self, v: Vec2) -> Vec2 {
+        v.clamp(self.min, self.max)
     }
     /// Clamp a 3d vector (ignoring Z) to the bounding box.
-    pub fn clamp3(&self, vec: &mut Vec3) {
-        vec.x = vec.x.clamp(self.min.x, self.max.x);
-        vec.y = vec.y.clamp(self.min.y, self.max.y);
+    pub fn clamp3(&self, v: &mut Vec3) -> Vec3 {
+        v.clamp(
+            self.min.extend(f32::NEG_INFINITY),
+            self.max.extend(f32::INFINITY),
+        )
     }
 
     /// Generate a random value in the bounding box.

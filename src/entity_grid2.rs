@@ -26,6 +26,7 @@ use bevy_newtonian2d::{PhysicsSimulationState, Position2};
 
 use smallvec::SmallVec;
 
+use crate::spec::RowColIterator;
 use crate::{Aabb2, RowCol, SpatialGrid2, SpatialGridSpec, SpatialGridState, smallset::SmallSet};
 
 pub struct EntityGridPlugin;
@@ -205,24 +206,6 @@ impl EntitySetsGrid {
         None
     }
 
-    pub fn get_entities_in_radius(
-        &self,
-        position: Vec2,
-        radius: f32,
-        layers: &[EntityGridLayer],
-    ) -> HashSet<Entity> {
-        let mut other_entities: HashSet<Entity> = HashSet::default();
-        let positions = self.get_in_radius(position, radius);
-        for rowcol in positions {
-            if self.in_bounds(rowcol) {
-                for &layer in layers {
-                    other_entities.extend(self[rowcol][layer].iter());
-                }
-            }
-        }
-        other_entities
-    }
-
     /// Iterate over entities in a radius.
     pub fn iter_entities_in_radius<'a>(
         &'a self,
@@ -230,7 +213,11 @@ impl EntitySetsGrid {
         radius: f32,
         layers: &'a [EntityGridLayer],
     ) -> EntityRadiusIterator<'a> {
-        EntityRadiusIterator::new(&self, layers, self.get_in_radius(position, radius))
+        EntityRadiusIterator::new(
+            &self,
+            layers,
+            RowColIterator::new(self.spec, position, radius),
+        )
     }
 
     /// Remove an entity from the grid entirely.
@@ -276,8 +263,8 @@ pub struct EntityRadiusIterator<'a> {
     grid: &'a EntitySetsGrid,
     layers: &'a [EntityGridLayer],
 
-    rowcols: Vec<RowCol>,
-    rowcol_idx: usize,
+    rowcol: RowCol,
+    rowcol_iter: RowColIterator,
     layer_iter: Iter<'a, EntityGridLayer>,
     entity_iter: Iter<'a, Entity>,
 }
@@ -285,13 +272,13 @@ impl<'a> EntityRadiusIterator<'a> {
     pub fn new(
         grid: &'a EntitySetsGrid,
         layers: &'a [EntityGridLayer],
-        rowcols: Vec<RowCol>,
+        rowcol_iter: RowColIterator,
     ) -> Self {
         Self {
             grid,
             layers,
-            rowcols,
-            rowcol_idx: 0,
+            rowcol: RowCol::default(),
+            rowcol_iter,
             layer_iter: Iter::default(),
             entity_iter: Iter::default(),
         }
@@ -308,12 +295,12 @@ impl<'a> Iterator for EntityRadiusIterator<'a> {
             }
 
             if let Some(&layer) = self.layer_iter.next() {
-                self.entity_iter = self.grid[self.rowcols[self.rowcol_idx]][layer].iter();
+                self.entity_iter = self.grid[self.rowcol][layer].iter();
                 continue;
             }
 
-            self.rowcol_idx += 1;
-            if self.rowcol_idx < self.rowcols.len() {
+            if let Some(rowcol) = self.rowcol_iter.next() {
+                self.rowcol = rowcol;
                 self.layer_iter = self.layers.iter();
                 continue;
             }

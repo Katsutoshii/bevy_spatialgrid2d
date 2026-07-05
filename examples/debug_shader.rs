@@ -17,9 +17,9 @@ use bevy_newtonian2d::{
     PhysicsMaterial, PhysicsSimulationState, PhysicsSystem, Position2, Velocity2,
 };
 use bevy_spatialgrid2d::{
-    EntityGridEvent, GridEntity, NeighborRadius, SpatialGrid2dPlugin, SpatialGridShaderAssets,
+    GridEntity, NeighborRadius, SpatialGrid2dPlugin, SpatialGridShaderAssets,
     SpatialGridShaderMaterial, SpatialGridShaderMaterialPlugin, SpatialGridShaderPlane,
-    SpatialGridSpec,
+    SpatialGridSpec, SpatialGridState,
 };
 
 fn main() {
@@ -170,7 +170,7 @@ impl Plugin for GridVisualizerPlugin {
         app.add_plugins(SpatialGridShaderMaterialPlugin::<GridVisualizerMaterial>::default())
             .add_systems(
                 Update,
-                GridVisualizerMaterial::update.run_if(on_message::<EntityGridEvent>),
+                GridVisualizerMaterial::update.run_if(in_state(SpatialGridState::Ready)),
             );
     }
 }
@@ -239,26 +239,19 @@ impl GridVisualizerMaterial {
         grid_spec: Res<SpatialGridSpec>,
         assets: Res<SpatialGridShaderAssets<Self>>,
         mut shader_assets: ResMut<Assets<Self>>,
-        mut grid_events: MessageReader<EntityGridEvent>,
         mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
-        neighbor_radii: Query<&NeighborRadius>,
+        query: Query<(&Position2, &NeighborRadius)>,
     ) {
         let mut material = shader_assets.get_mut(&assets.shader_material).unwrap();
-        for event in grid_events.read() {
-            if let Some(rowcol) = event.prev_rowcol {
-                if event.prev_empty {
-                    material.grid[grid_spec.flat_index(rowcol)] = 0;
-                }
+        if material.grid.is_empty() {
+            return;
+        }
+        for (position, radius) in query.iter() {
+            for neighbor_rowcol in grid_spec.iter_cells_in_radius(position.0, radius.0) {
+                material.grid[grid_spec.flat_index(neighbor_rowcol)] = 1;
             }
-            if let Some(rowcol) = event.rowcol {
-                let radius = neighbor_radii.get(event.entity).unwrap();
-                for neighbor_rowcol in grid_spec
-                    .get_in_radius_discrete(rowcol, grid_spec.discretize(radius.0).unwrap() + 1)
-                {
-                    material.grid[grid_spec.flat_index(neighbor_rowcol)] = 1;
-                }
-                material.grid[grid_spec.flat_index(rowcol)] = 3;
-            }
+            let rowcol = grid_spec.to_rowcol_unchecked(position.0);
+            material.grid[grid_spec.flat_index(rowcol)] = 3;
         }
         let mut buffer = storage_buffers.get_mut(&material.grid_handle).unwrap();
         buffer.set_data(material.grid.clone());
