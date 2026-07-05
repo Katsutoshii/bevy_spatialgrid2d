@@ -57,11 +57,11 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         app.update();
 
         let neighbors = app.world().get::<Neighbors>(probe).unwrap();
-        if neighbors.same_layer.len() != 16 {
+        if neighbors.same_layer.len() != 44 {
             panic!(
                 "Invalid neighbor count: {} != {}",
                 neighbors.same_layer.len(),
-                16
+                44
             );
         }
     })
