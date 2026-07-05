@@ -1,7 +1,9 @@
 use crate::{EntityGridLayer, EntityGridSystem, EntitySetsGrid, GridEntity};
+use bevy::ecs::query::QueryData;
 use bevy::ecs::schedule::InternedSystemSet;
+use bevy::ecs::schedule::ScheduleConfigs;
+use bevy::math::FloatOrd;
 use bevy::prelude::*;
-use bevy::{ecs::schedule::ScheduleConfigs, math::FloatOrd};
 use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
 use smallvec::SmallVec;
 
@@ -67,179 +69,128 @@ pub struct Collisions {
 #[reflect(Component)]
 pub struct NeighborLayerMask(pub SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>);
 
-#[allow(dead_code)]
-pub fn fill_neighbors_from_entities<const N: usize>(
-    others_query: &Query<(&Position2, &CircleCollider)>,
-    entities: [Entity; N],
-    position: Vec2,
-    radius: NeighborRadius,
-    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-) {
-    if let Ok(results) = others_query.get_many(entities) {
-        for ((other_position, _), entity) in results.iter().zip(entities) {
-            let delta = other_position.0 - position;
-            let distance_squared = delta.length_squared();
-            if radius.in_radius(distance_squared) {
-                neighbors.push(Neighbor {
-                    entity,
-                    delta,
-                    distance_squared,
-                });
-            }
-        }
-    }
+#[derive(QueryData)]
+pub struct NeighborOtherQueryData {
+    position: &'static Position2,
+    collider: &'static CircleCollider,
 }
 
-#[allow(dead_code)]
-pub fn fill_neighbors_batched<const N: usize>(
+#[derive(QueryData)]
+pub struct NeighborQueryData {
     entity: Entity,
-    position: Vec2,
-    radius: NeighborRadius,
-    mut other_entities: impl Iterator<Item = Entity>,
-    others_query: &Query<(&Position2, &CircleCollider)>,
-    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-) {
-    let mut other_entities_buf: [Entity; N] = [Entity::PLACEHOLDER; N];
-    let mut other_entities_i: usize = 0;
-    while let Some(other_entity) = other_entities.next() {
-        if entity == other_entity {
-            continue;
-        }
-        other_entities_buf[other_entities_i] = other_entity;
-        other_entities_i += 1;
-        if other_entities_i < N {
-            continue;
-        }
-        fill_neighbors_from_entities::<N>(
-            others_query,
-            other_entities_buf,
-            position,
-            radius,
-            neighbors,
-        );
-        other_entities_i = 0;
-    }
+    grid_entity: &'static GridEntity,
+    position: &'static Position2,
+    collider: &'static CircleCollider,
+    radius: &'static NeighborRadius,
+    layer_mask: &'static NeighborLayerMask,
+}
+impl NeighborQueryDataItem<'_, '_> {
+    pub fn update_same_layer(
+        &self,
+        query: Query<NeighborOtherQueryData>,
+        grid: &EntitySetsGrid,
+        neighbors: &mut Neighbors,
+        collisions: &mut Collisions,
+    ) {
+        neighbors.same_layer.clear();
+        collisions.same_layer.clear();
 
-    if other_entities_i > 0 {
-        for other_entity_i in 0..other_entities_i {
-            let other_entity = other_entities_buf[other_entity_i];
-            if let Ok((other_position, _)) = others_query.get(other_entity) {
-                let delta = other_position.0 - position;
+        for other_entity in
+            grid.iter_entities_in_radius(self.position.0, self.radius.0, &[self.grid_entity.layer])
+        {
+            if self.entity == other_entity {
+                continue;
+            }
+
+            if let Ok(other) = query.get(other_entity) {
+                let delta = other.position.0 - self.position.0;
                 let distance_squared = delta.length_squared();
-                if radius.in_radius(distance_squared) {
-                    neighbors.push(Neighbor {
-                        entity: other_entity,
-                        delta,
-                        distance_squared,
-                    });
+                if !self.radius.in_radius(distance_squared) {
+                    continue;
                 }
-            }
-        }
-    }
 
-    neighbors.sort_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
-    neighbors.truncate(MAX_NEIGHBORS);
-}
-
-pub fn fill_neighbors(
-    entity: Entity,
-    position: Vec2,
-    radius: NeighborRadius,
-    mut other_entities: impl Iterator<Item = Entity>,
-    others_query: &Query<(&Position2, &CircleCollider)>,
-    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-) {
-    while let Some(other_entity) = other_entities.next() {
-        if entity == other_entity {
-            continue;
-        }
-        if let Ok((other_position, _)) = others_query.get(other_entity) {
-            let delta = other_position.0 - position;
-            let distance_squared = delta.length_squared();
-            if radius.in_radius(distance_squared) {
-                neighbors.push(Neighbor {
+                let neighbor = Neighbor {
                     entity: other_entity,
                     delta,
                     distance_squared,
-                });
-            }
-        }
-    }
+                };
 
-    neighbors.sort_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
-    neighbors.truncate(MAX_NEIGHBORS);
-}
-
-pub fn update(
-    mut query: Query<(
-        Entity,
-        &GridEntity,
-        &Position2,
-        &CircleCollider,
-        &NeighborRadius,
-        &NeighborLayerMask,
-        &mut Neighbors,
-        &mut Collisions,
-    )>,
-    others: Query<(&Position2, &CircleCollider)>,
-    grid: Res<EntitySetsGrid>,
-) {
-    query.par_iter_mut().for_each(
-        |(
-            entity,
-            grid_entity,
-            position,
-            collider,
-            neighbor_radius,
-            layer_mask,
-            mut neighbors,
-            mut collisions,
-        )| {
-            neighbors.same_layer.clear();
-            neighbors.other_layer.clear();
-            collisions.same_layer.clear();
-            collisions.other_layer.clear();
-
-            let same_layer = &[grid_entity.layer];
-            let same_layer_entities =
-                grid.iter_entities_in_radius(position.0, neighbor_radius.0, same_layer);
-            fill_neighbors(
-                entity,
-                position.0,
-                *neighbor_radius,
-                same_layer_entities,
-                &others,
-                &mut neighbors.same_layer,
-            );
-            for neighbor in &neighbors.same_layer {
-                let (_, other_radius) = others.get(neighbor.entity).unwrap();
-                if collider.is_colliding(*other_radius, neighbor.distance_squared)
+                if self
+                    .collider
+                    .is_colliding(*other.collider, distance_squared)
                     && collisions.same_layer.len() < MAX_COLLISIONS
                 {
                     collisions.same_layer.push(neighbor.clone());
                 }
+
+                neighbors.same_layer.push(neighbor);
+            }
+        }
+
+        neighbors
+            .same_layer
+            .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
+    }
+
+    pub fn update_other_layer(
+        &self,
+        query: Query<NeighborOtherQueryData>,
+        grid: &EntitySetsGrid,
+        neighbors: &mut Neighbors,
+        collisions: &mut Collisions,
+    ) {
+        neighbors.other_layer.clear();
+        collisions.other_layer.clear();
+
+        for other_entity in
+            grid.iter_entities_in_radius(self.position.0, self.radius.0, &self.layer_mask.0)
+        {
+            if self.entity == other_entity {
+                continue;
             }
 
-            let other_layer_entities =
-                grid.iter_entities_in_radius(position.0, neighbor_radius.0, &layer_mask.0);
-            fill_neighbors(
-                entity,
-                position.0,
-                *neighbor_radius,
-                other_layer_entities.into_iter(),
-                &others,
-                &mut neighbors.other_layer,
-            );
-            for neighbor in &neighbors.other_layer {
-                let (_, other_collider) = others.get(neighbor.entity).unwrap();
-                if collider.is_colliding(*other_collider, neighbor.distance_squared)
+            if let Ok(other) = query.get(other_entity) {
+                let delta = other.position.0 - self.position.0;
+                let distance_squared = delta.length_squared();
+                if !self.radius.in_radius(distance_squared) {
+                    continue;
+                }
+
+                let neighbor = Neighbor {
+                    entity: other_entity,
+                    delta,
+                    distance_squared,
+                };
+
+                if self
+                    .collider
+                    .is_colliding(*other.collider, distance_squared)
                     && collisions.other_layer.len() < MAX_COLLISIONS
                 {
                     collisions.other_layer.push(neighbor.clone());
                 }
+
+                neighbors.other_layer.push(neighbor);
             }
-        },
-    );
+        }
+
+        neighbors
+            .other_layer
+            .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
+    }
+}
+
+pub fn update(
+    mut query: Query<(NeighborQueryData, &mut Neighbors, &mut Collisions)>,
+    others_query: Query<NeighborOtherQueryData>,
+    grid: Res<EntitySetsGrid>,
+) {
+    query
+        .par_iter_mut()
+        .for_each(|(object, mut neighbors, mut collisions)| {
+            object.update_same_layer(others_query, &grid, &mut neighbors, &mut collisions);
+            object.update_other_layer(others_query, &grid, &mut neighbors, &mut collisions);
+        });
 }
 
 #[cfg(test)]

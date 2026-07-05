@@ -274,7 +274,7 @@ impl RowColIterator {
         let min = spec.to_rowcol_unchecked(center - radius).max((0, 0));
         let max = spec
             .to_rowcol_unchecked(center + radius)
-            .min((spec.rows, spec.cols));
+            .min((spec.rows - 1, spec.cols - 1));
         Self {
             min,
             max,
