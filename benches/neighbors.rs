@@ -21,8 +21,8 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         .insert_state(PhysicsSimulationState::Running)
         .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
         .insert_resource(SpatialGridSpec {
-            cols: 64,
-            rows: 64,
+            cols: 96,
+            rows: 96,
             width: 1.0,
         });
     app.update();
