@@ -37,9 +37,23 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
                 CircleCollider { radius: 1.0 },
             )
         }));
+    let test_entity = app
+        .world_mut()
+        .spawn((
+            Position2::new(0.5, 0.5),
+            Neighbors::default(),
+            NeighborRadius(2.0),
+            Collisions::default(),
+            CircleCollider { radius: 1.0 },
+        ))
+        .id();
+    app.update();
 
     bencher.iter(|| {
         app.update();
+        let neighbors = app.world().get::<Neighbors>(test_entity);
+        dbg!(neighbors);
+
         black_box(app.world().resource::<Time>().elapsed());
     })
 }

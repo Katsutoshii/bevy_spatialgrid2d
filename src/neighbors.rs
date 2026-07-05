@@ -67,19 +67,93 @@ pub struct Collisions {
 #[reflect(Component)]
 pub struct NeighborLayerMask(pub SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>);
 
+#[allow(dead_code)]
+pub fn fill_neighbors_from_entities<const N: usize>(
+    others_query: &Query<(&Position2, &CircleCollider)>,
+    entities: [Entity; N],
+    position: Vec2,
+    radius: NeighborRadius,
+    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
+) {
+    if let Ok(results) = others_query.get_many(entities) {
+        for ((other_position, _), entity) in results.iter().zip(entities) {
+            let delta = other_position.0 - position;
+            let distance_squared = delta.length_squared();
+            if radius.in_radius(distance_squared) {
+                neighbors.push(Neighbor {
+                    entity,
+                    delta,
+                    distance_squared,
+                });
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn fill_neighbors_batched<const N: usize>(
+    entity: Entity,
+    position: Vec2,
+    radius: NeighborRadius,
+    mut other_entities: impl Iterator<Item = Entity>,
+    others_query: &Query<(&Position2, &CircleCollider)>,
+    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
+) {
+    let mut other_entities_buf: [Entity; N] = [Entity::PLACEHOLDER; N];
+    let mut other_entities_i: usize = 0;
+    while let Some(other_entity) = other_entities.next() {
+        if entity == other_entity {
+            continue;
+        }
+        other_entities_buf[other_entities_i] = other_entity;
+        other_entities_i += 1;
+        if other_entities_i < N {
+            continue;
+        }
+        fill_neighbors_from_entities::<N>(
+            others_query,
+            other_entities_buf,
+            position,
+            radius,
+            neighbors,
+        );
+        other_entities_i = 0;
+    }
+
+    if other_entities_i > 0 {
+        for other_entity_i in 0..other_entities_i {
+            let other_entity = other_entities_buf[other_entity_i];
+            if let Ok((other_position, _)) = others_query.get(other_entity) {
+                let delta = other_position.0 - position;
+                let distance_squared = delta.length_squared();
+                if radius.in_radius(distance_squared) {
+                    neighbors.push(Neighbor {
+                        entity: other_entity,
+                        delta,
+                        distance_squared,
+                    });
+                }
+            }
+        }
+    }
+
+    neighbors.sort_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
+    neighbors.truncate(MAX_NEIGHBORS);
+}
+
 pub fn fill_neighbors(
     entity: Entity,
     position: Vec2,
     radius: NeighborRadius,
     mut other_entities: impl Iterator<Item = Entity>,
-    others: &Query<(&Position2, &CircleCollider)>,
+    others_query: &Query<(&Position2, &CircleCollider)>,
     neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
 ) {
     while let Some(other_entity) = other_entities.next() {
         if entity == other_entity {
             continue;
         }
-        if let Ok((other_position, _)) = others.get(other_entity) {
+        if let Ok((other_position, _)) = others_query.get(other_entity) {
             let delta = other_position.0 - position;
             let distance_squared = delta.length_squared();
             if radius.in_radius(distance_squared) {
@@ -178,8 +252,9 @@ mod tests {
         time::TimeUpdateStrategy,
     };
     use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
+    use itertools::Itertools;
 
-    /// cargo test -- neighbors::tests --nocapture
+    /// cargo test -- neighbors::tests::test_update --nocapture
     #[test]
     fn test_update() {
         let mut app = App::new();
@@ -225,5 +300,48 @@ mod tests {
                 .iter()
                 .any(|n| n.entity == e2)
         );
+    }
+
+    /// cargo test -- neighbors::tests::test_bench --nocapture
+    #[test]
+    fn test_bench() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, StatesPlugin, SpatialGrid2dPlugin))
+            .insert_state(PhysicsSimulationState::Running)
+            .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
+            .insert_resource(SpatialGridSpec {
+                cols: 128,
+                rows: 128,
+                width: 4.0,
+            });
+        app.update();
+
+        let step_size = 1.0;
+        app.world_mut()
+            .spawn_batch((0..128).cartesian_product(0..128).map(|(x, y)| {
+                (
+                    Position2::new(x as f32 * step_size, y as f32 * step_size),
+                    Neighbors::default(),
+                    NeighborRadius(2.0),
+                    Collisions::default(),
+                    CircleCollider { radius: 1.0 },
+                )
+            }));
+        let test_entity = app
+            .world_mut()
+            .spawn((
+                Position2::new(0.5, 0.5),
+                Neighbors::default(),
+                NeighborRadius(2.0),
+                Collisions::default(),
+                CircleCollider { radius: 1.0 },
+            ))
+            .id();
+
+        app.update();
+        let neighbors = app.world().get::<Neighbors>(test_entity);
+        assert!(neighbors.is_some());
+        assert_eq!(neighbors.unwrap().same_layer.len(), 8);
+        dbg!(neighbors);
     }
 }

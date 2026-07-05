@@ -21,7 +21,7 @@ use bevy::{
         world::{DeferredWorld, FromWorld, World},
     },
     gizmos::gizmos::Gizmos,
-    math::{Isometry2d, UVec2, Vec2, primitives::RegularPolygon},
+    math::{Isometry2d, Rot2, UVec2, Vec2, primitives::RegularPolygon},
     mesh::{Mesh, Mesh2d},
     reflect::Reflect,
     sprite_render::{ColorMaterial, MeshMaterial2d},
@@ -318,8 +318,13 @@ impl BoidQueryDataItem<'_, '_> {
 
     /// Computes torque on the Boid.
     fn compute_torque(&self) -> Torque2 {
-        (Torque2::towards(*self.rotation, Rotation2(self.velocity.0))
-            - (*self.angular_velocity * self.boid.angular_velocity_break))
+        (Torque2::towards(
+            *self.rotation,
+            Rotation2(Rot2 {
+                cos: self.velocity.0.x,
+                sin: self.velocity.0.y,
+            }),
+        ) - (*self.angular_velocity * self.boid.angular_velocity_break))
             * self.boid.torque_factor
     }
 }

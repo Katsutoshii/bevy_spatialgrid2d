@@ -6,7 +6,7 @@ use bevy::{prelude::*, render::render_resource::ShaderType};
 use crate::{Aabb2, RowCol};
 
 /// Specification describing how large the grid is.
-#[derive(Resource, Reflect, ShaderType, Clone, Debug)]
+#[derive(Resource, Reflect, ShaderType, Copy, Clone, Debug)]
 #[reflect(Resource)]
 #[repr(C)]
 pub struct SpatialGridSpec {
@@ -24,19 +24,30 @@ impl Default for SpatialGridSpec {
     }
 }
 impl SpatialGridSpec {
+    /// Discretize a f32 into rowcol space.
+    #[inline]
     pub fn discretize(&self, value: f32) -> Option<u32> {
         if value < 0.0 {
             return None;
         }
         Some((value / self.width) as u32)
     }
-    // Covert row, col to a single index.
+
+    /// Discretize a f32 into rowcol space without bounds checking.
+    #[inline]
+    pub fn discretize_unchecked(&self, value: f32) -> u32 {
+        (value / self.width) as u32
+    }
+
+    /// Covert row, col to a single index.
+    #[inline]
     pub fn flat_index(&self, rowcol: RowCol) -> usize {
         let (row, col) = rowcol;
         row as usize * self.cols as usize + col as usize
     }
 
     /// Returns (row, col) from a position in world space.
+    #[inline]
     pub fn to_rowcol(&self, mut position: Vec2) -> Option<RowCol> {
         position += self.offset();
         let res = (self.discretize(position.y)?, self.discretize(position.x)?);
@@ -44,6 +55,16 @@ impl SpatialGridSpec {
             return Some(res);
         }
         None
+    }
+
+    /// Returns (row, col) from a position in world space without bounds checking.
+    #[inline]
+    pub fn to_rowcol_unchecked(&self, mut position: Vec2) -> RowCol {
+        position += self.offset();
+        (
+            self.discretize_unchecked(position.y),
+            self.discretize_unchecked(position.x),
+        )
     }
 
     /// Returns (row, col) from a position in world space.
@@ -135,6 +156,7 @@ impl SpatialGridSpec {
     }
 
     /// Returns true iff the rowcol is in bounds.
+    #[inline]
     pub fn in_bounds(&self, rowcol: RowCol) -> bool {
         let (row, col) = rowcol;
         row < self.rows && col < self.cols
@@ -206,41 +228,26 @@ impl SpatialGridSpec {
         results
     }
 
-    /// Get in radius.
-    pub fn get_in_radius(&self, position: Vec2, radius: f32) -> Vec<RowCol> {
-        if let Some(rowcol) = self.to_rowcol(position) {
-            return self.get_in_radius_discrete(rowcol, self.discretize(radius).unwrap() + 1);
-        }
-        vec![]
+    #[inline]
+    pub fn iter_cells_in_radius(&self, center: Vec2, radius: f32) -> RowColIterator {
+        RowColIterator::new(*self, center, radius)
     }
 
-    /// Get in radius, with discrete cell position inputs.
-    pub fn get_in_radius_discrete(&self, rowcol: RowCol, radius: u32) -> Vec<RowCol> {
-        let (row, col) = rowcol;
-        if !Self::in_bounds(self, rowcol) {
-            return vec![];
+    /// Returns a cell's bounding box.
+    #[inline]
+    pub fn get_cell_aabb2(&self, (r, c): RowCol) -> Aabb2 {
+        let min = Vec2::new(c as f32, r as f32) * self.width - self.offset();
+        Aabb2 {
+            min,
+            max: min + self.width,
         }
-        let mut results = Vec::default();
-        for other_row in self.cell_range(row, radius) {
-            for other_col in self.cell_range(col, radius) {
-                let other_rowcol = (other_row, other_col);
-                if Self::in_radius(rowcol, other_rowcol, radius)
-                    && Self::in_bounds(self, other_rowcol)
-                {
-                    results.push(other_rowcol)
-                }
-            }
-        }
-        results
     }
 
-    /// Returns true if a cell is within the given radius to another cell.
-    pub fn in_radius(rowcol: RowCol, other_rowcol: RowCol, radius: u32) -> bool {
-        let (row, col) = rowcol;
-        let (other_row, other_col) = other_rowcol;
-        let row_dist = row.abs_diff(other_row);
-        let col_dist = col.abs_diff(other_col);
-        row_dist * row_dist + col_dist * col_dist < radius * radius
+    /// Returns true if the given cell is withiin the given radius from the center.
+    pub fn is_cell_in_radius(&self, center: Vec2, radius: f32, (r, c): RowCol) -> bool {
+        let aabb = self.get_cell_aabb2((r, c));
+        let closest_point = aabb.clamp2(center);
+        center.distance_squared(closest_point) <= radius * radius
     }
 
     /// Returns a range starting at `center - radius` ending at `center + radius`.
@@ -253,11 +260,69 @@ impl SpatialGridSpec {
     }
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct RowColIterator {
+    min: RowCol,
+    max: RowCol,
+    center: Vec2,
+    radius: f32,
+    spec: SpatialGridSpec,
+    current: RowCol,
+}
+impl RowColIterator {
+    pub fn new(spec: SpatialGridSpec, center: Vec2, radius: f32) -> Self {
+        let min = spec.to_rowcol_unchecked(center - radius).max((0, 0));
+        let max = spec
+            .to_rowcol_unchecked(center + radius)
+            .min((spec.rows, spec.cols));
+        Self {
+            min,
+            max,
+            center,
+            current: min,
+            radius,
+            spec,
+        }
+    }
+
+    #[inline]
+    fn is_cell_in_radius(&self, rowcol: RowCol) -> bool {
+        self.spec
+            .is_cell_in_radius(self.center, self.radius, rowcol)
+    }
+}
+impl Iterator for RowColIterator {
+    type Item = RowCol;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // Try to yield the current rowcol, if it's in the radius.
+            if self.current.1 <= self.max.1 {
+                let result = self.current;
+                self.current.1 += 1;
+                if self.is_cell_in_radius(result) {
+                    return Some(result);
+                }
+                continue;
+            }
+
+            // Try to get the next row.
+            self.current.0 += 1;
+            if self.current.0 <= self.max.0 {
+                self.current.1 = self.min.1;
+                continue;
+            }
+
+            return None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::math::Vec2;
 
-    use crate::SpatialGridSpec;
+    use crate::{RowCol, SpatialGridSpec, spec::RowColIterator};
 
     #[test]
     fn boundary() {
@@ -305,5 +370,39 @@ mod tests {
             spec.bilinear_neighbors(Vec2 { x: 0.0, y: 0.5 }),
             Some([((1, 1), 0.5), ((2, 1), 0.5), ((1, 2), 0.0), ((2, 2), 0.0)])
         );
+    }
+
+    #[test]
+    fn in_radius() {
+        let spec = SpatialGridSpec {
+            rows: 3,
+            cols: 3,
+            width: 1.0,
+        };
+        assert!(spec.is_cell_in_radius(Vec2::new(0.0, 0.0), 2.0, (2, 2)));
+    }
+
+    #[test]
+    fn iter_rowcol() {
+        let spec = SpatialGridSpec {
+            rows: 3,
+            cols: 3,
+            width: 1.0,
+        };
+        let rcs: Vec<RowCol> = RowColIterator::new(spec, Vec2::new(0.0, 0.0), 1.0).collect();
+        assert_eq!(
+            rcs,
+            vec![
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (1, 0),
+                (1, 1),
+                (1, 2),
+                (2, 0),
+                (2, 1),
+                (2, 2),
+            ]
+        )
     }
 }
