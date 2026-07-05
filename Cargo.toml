@@ -40,9 +40,16 @@ bevy = { version = "0.19", default-features = true, features = [
 ] }
 bevy-inspector-egui = { version = "0.37" }
 bevy_egui = { version = "0.40" }
+criterion = { version = "0.8", features = ["html_reports"] }
+itertools = "0.14"
 
 [[example]]
 name = "boids"
 
 [[example]]
 name = "debug_shader"
+
+[[bench]]
+name = "neighbors"
+path = "benches/neighbors.rs"
+harness = false

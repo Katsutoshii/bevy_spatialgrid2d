@@ -1,4 +1,5 @@
 use std::ops::{Index, IndexMut};
+use std::slice::Iter;
 
 use bevy::{
     app::{App, FixedUpdate, Plugin},
@@ -161,7 +162,7 @@ impl Default for EntityGridEvent {
     }
 }
 
-#[derive(Resource, Default, Deref, DerefMut)]
+#[derive(Resource, Default, Deref, DerefMut, Debug)]
 pub struct EntitySetsGrid(SpatialGrid2<EntitySets>);
 
 impl EntitySetsGrid {
@@ -222,20 +223,14 @@ impl EntitySetsGrid {
         other_entities
     }
 
-    /// Get entities in radius, first checking half radius and returning early if that gives enough entities.
-    pub fn get_n_entities_in_radius(
-        &self,
+    /// Iterate over entities in a radius.
+    pub fn iter_entities_in_radius<'a>(
+        &'a self,
         position: Vec2,
         radius: f32,
-        layers: &[EntityGridLayer],
-        n: usize,
-    ) -> HashSet<Entity> {
-        let prefetch = self.get_entities_in_radius(position, radius / 2., layers);
-        if prefetch.len() >= n {
-            prefetch
-        } else {
-            self.get_entities_in_radius(position, radius, layers)
-        }
+        layers: &'a [EntityGridLayer],
+    ) -> EntityRadiusIterator<'a> {
+        EntityRadiusIterator::new(&self, layers, self.get_in_radius(position, radius))
     }
 
     /// Remove an entity from the grid entirely.
@@ -273,6 +268,58 @@ impl EntitySetsGrid {
             }
         }
         result.into_iter().collect()
+    }
+}
+
+/// Iterates over entities in a given radius.
+pub struct EntityRadiusIterator<'a> {
+    grid: &'a EntitySetsGrid,
+    layers: &'a [EntityGridLayer],
+
+    rowcols: Vec<RowCol>,
+    rowcol_idx: usize,
+    layer_iter: Iter<'a, EntityGridLayer>,
+    entity_iter: Iter<'a, Entity>,
+}
+impl<'a> EntityRadiusIterator<'a> {
+    pub fn new(
+        grid: &'a EntitySetsGrid,
+        layers: &'a [EntityGridLayer],
+        rowcols: Vec<RowCol>,
+    ) -> Self {
+        Self {
+            grid,
+            layers,
+            rowcols,
+            rowcol_idx: 0,
+            layer_iter: Iter::default(),
+            entity_iter: Iter::default(),
+        }
+    }
+}
+
+impl<'a> Iterator for EntityRadiusIterator<'a> {
+    type Item = Entity;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(&entity) = self.entity_iter.next() {
+                return Some(entity);
+            }
+
+            if let Some(&layer) = self.layer_iter.next() {
+                self.entity_iter = self.grid[self.rowcols[self.rowcol_idx]][layer].iter();
+                continue;
+            }
+
+            self.rowcol_idx += 1;
+            if self.rowcol_idx < self.rowcols.len() {
+                self.layer_iter = self.layers.iter();
+                continue;
+            }
+
+            return None;
+        }
     }
 }
 

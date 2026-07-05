@@ -1,6 +1,5 @@
 use crate::{EntityGridLayer, EntityGridSystem, EntitySetsGrid, GridEntity};
 use bevy::ecs::schedule::InternedSystemSet;
-use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::{ecs::schedule::ScheduleConfigs, math::FloatOrd};
 use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
@@ -46,7 +45,7 @@ pub const MAX_NEIGHBORS: usize = 16;
 pub const MAX_COLLISIONS: usize = 4;
 
 /// Neighbors for this entity in the current frame.
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default, Reflect, Debug)]
 #[reflect(Component)]
 #[require(NeighborRadius, GridEntity, NeighborLayerMask)]
 pub struct Neighbors {
@@ -68,16 +67,15 @@ pub struct Collisions {
 #[reflect(Component)]
 pub struct NeighborLayerMask(pub SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>);
 
-pub fn get_neighbors(
+pub fn fill_neighbors(
     entity: Entity,
     position: Vec2,
     radius: NeighborRadius,
-    other_entities: &HashSet<Entity>,
+    mut other_entities: impl Iterator<Item = Entity>,
     others: &Query<(&Position2, &CircleCollider)>,
-) -> Vec<Neighbor> {
-    let mut neighbors: Vec<Neighbor> = Vec::with_capacity(other_entities.len());
-
-    for &other_entity in other_entities.iter() {
+    neighbors: &mut SmallVec<[Neighbor; MAX_NEIGHBORS]>,
+) {
+    while let Some(other_entity) = other_entities.next() {
         if entity == other_entity {
             continue;
         }
@@ -96,7 +94,6 @@ pub fn get_neighbors(
 
     neighbors.sort_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
     neighbors.truncate(MAX_NEIGHBORS);
-    neighbors
 }
 
 pub fn update(
@@ -130,53 +127,103 @@ pub fn update(
             collisions.other_layer.clear();
 
             let same_layer = &[grid_entity.layer];
-            let same_layer_entities = grid.get_n_entities_in_radius(
-                position.0,
-                neighbor_radius.0,
-                same_layer,
-                MAX_NEIGHBORS,
-            );
-            for neighbor in get_neighbors(
+            let same_layer_entities =
+                grid.iter_entities_in_radius(position.0, neighbor_radius.0, same_layer);
+            fill_neighbors(
                 entity,
                 position.0,
                 *neighbor_radius,
-                &same_layer_entities,
+                same_layer_entities,
                 &others,
-            )
-            .into_iter()
-            {
-                neighbors.same_layer.push(neighbor);
+                &mut neighbors.same_layer,
+            );
+            for neighbor in &neighbors.same_layer {
                 let (_, other_radius) = others.get(neighbor.entity).unwrap();
                 if collider.is_colliding(*other_radius, neighbor.distance_squared)
                     && collisions.same_layer.len() < MAX_COLLISIONS
                 {
-                    collisions.same_layer.push(neighbor);
+                    collisions.same_layer.push(neighbor.clone());
                 }
             }
 
-            let other_layer_entities = grid.get_n_entities_in_radius(
-                position.0,
-                neighbor_radius.0,
-                &layer_mask.0,
-                MAX_NEIGHBORS,
-            );
-            for neighbor in get_neighbors(
+            let other_layer_entities =
+                grid.iter_entities_in_radius(position.0, neighbor_radius.0, &layer_mask.0);
+            fill_neighbors(
                 entity,
                 position.0,
                 *neighbor_radius,
-                &other_layer_entities,
+                other_layer_entities.into_iter(),
                 &others,
-            )
-            .into_iter()
-            {
-                neighbors.other_layer.push(neighbor);
+                &mut neighbors.other_layer,
+            );
+            for neighbor in &neighbors.other_layer {
                 let (_, other_collider) = others.get(neighbor.entity).unwrap();
                 if collider.is_colliding(*other_collider, neighbor.distance_squared)
                     && collisions.other_layer.len() < MAX_COLLISIONS
                 {
-                    collisions.other_layer.push(neighbor);
+                    collisions.other_layer.push(neighbor.clone());
                 }
             }
         },
-    )
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Collisions, NeighborRadius, Neighbors, SpatialGrid2dPlugin, SpatialGridSpec};
+    use bevy::{
+        MinimalPlugins,
+        app::App,
+        state::app::{AppExtStates, StatesPlugin},
+        time::TimeUpdateStrategy,
+    };
+    use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
+
+    /// cargo test -- neighbors::tests --nocapture
+    #[test]
+    fn test_update() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, StatesPlugin, SpatialGrid2dPlugin))
+            .insert_state(PhysicsSimulationState::Running)
+            .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
+            .insert_resource(SpatialGridSpec {
+                cols: 4,
+                rows: 4,
+                width: 1.0,
+            });
+        app.update();
+
+        let e1 = app
+            .world_mut()
+            .spawn((
+                Position2::new(0.0, 0.0),
+                Neighbors::default(),
+                NeighborRadius(2.0),
+                Collisions::default(),
+                CircleCollider { radius: 1.0 },
+            ))
+            .id();
+        let e2 = app
+            .world_mut()
+            .spawn((
+                Position2::new(0.0, 1.0),
+                Neighbors::default(),
+                NeighborRadius(2.0),
+                Collisions::default(),
+                CircleCollider { radius: 1.0 },
+            ))
+            .id();
+
+        app.update();
+
+        assert!(app.world().get::<Neighbors>(e1).is_some());
+        assert!(
+            app.world()
+                .get::<Neighbors>(e1)
+                .unwrap()
+                .same_layer
+                .iter()
+                .any(|n| n.entity == e2)
+        );
+    }
 }
