@@ -1,12 +1,11 @@
 //! Benchmark nearest neighbors.
 //! `cargo bench --bench neighbors`
-use std::hint::black_box;
 
 use bevy::{
     MinimalPlugins,
     app::App,
     state::app::{AppExtStates, StatesPlugin},
-    time::{Time, TimeUpdateStrategy},
+    time::TimeUpdateStrategy,
 };
 use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
 use bevy_spatialgrid2d::{
@@ -22,25 +21,49 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         .insert_state(PhysicsSimulationState::Running)
         .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
         .insert_resource(SpatialGridSpec {
-            cols: 128,
-            rows: 128,
-            width: 4.0,
+            cols: 64,
+            rows: 64,
+            width: 1.0,
         });
-    let step_size = 1.0;
-    app.world_mut()
-        .spawn_batch((0..128).cartesian_product(0..128).map(|(x, y)| {
-            (
-                Position2::new(x as f32 * step_size, y as f32 * step_size),
-                Neighbors::default(),
-                NeighborRadius(2.0),
-                Collisions::default(),
-                CircleCollider { radius: 1.0 },
-            )
-        }));
+    app.update();
+
+    let step_size = 0.5;
+    app.world_mut().spawn_batch(
+        (-64..64)
+            .cartesian_product(-64..64)
+            .filter(|&(x, y)| (x, y) != (0, 0))
+            .map(|(x, y)| {
+                (
+                    Position2::new(x as f32 * step_size, y as f32 * step_size),
+                    Neighbors::default(),
+                    NeighborRadius(2.0),
+                    Collisions::default(),
+                    CircleCollider { radius: 1.0 },
+                )
+            }),
+    );
+    let probe = app
+        .world_mut()
+        .spawn((
+            Position2::new(0.0, 0.0),
+            Neighbors::default(),
+            NeighborRadius(2.0),
+            Collisions::default(),
+            CircleCollider { radius: 1.0 },
+        ))
+        .id();
 
     bencher.iter(|| {
         app.update();
-        black_box(app.world().resource::<Time>().elapsed());
+
+        let neighbors = app.world().get::<Neighbors>(probe).unwrap();
+        if neighbors.same_layer.len() != 16 {
+            panic!(
+                "Invalid neighbor count: {} != {}",
+                neighbors.same_layer.len(),
+                16
+            );
+        }
     })
 }
 

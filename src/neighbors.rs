@@ -178,8 +178,9 @@ mod tests {
         time::TimeUpdateStrategy,
     };
     use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
+    use itertools::Itertools;
 
-    /// cargo test -- neighbors::tests --nocapture
+    /// cargo test -- neighbors::tests::test_update --nocapture
     #[test]
     fn test_update() {
         let mut app = App::new();
@@ -187,13 +188,28 @@ mod tests {
             .insert_state(PhysicsSimulationState::Running)
             .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
             .insert_resource(SpatialGridSpec {
-                cols: 4,
-                rows: 4,
+                cols: 128,
+                rows: 128,
                 width: 1.0,
             });
         app.update();
 
-        let e1 = app
+        let step_size = 0.5;
+        app.world_mut().spawn_batch(
+            (-64..64)
+                .cartesian_product(-64..64)
+                .filter(|&(x, y)| (x, y) != (0, 0))
+                .map(|(x, y)| {
+                    (
+                        Position2::new(x as f32 * step_size, y as f32 * step_size),
+                        Neighbors::default(),
+                        NeighborRadius(2.0),
+                        Collisions::default(),
+                        CircleCollider { radius: 1.0 },
+                    )
+                }),
+        );
+        let probe = app
             .world_mut()
             .spawn((
                 Position2::new(0.0, 0.0),
@@ -203,27 +219,17 @@ mod tests {
                 CircleCollider { radius: 1.0 },
             ))
             .id();
-        let e2 = app
-            .world_mut()
-            .spawn((
-                Position2::new(0.0, 1.0),
-                Neighbors::default(),
-                NeighborRadius(2.0),
-                Collisions::default(),
-                CircleCollider { radius: 1.0 },
-            ))
-            .id();
 
         app.update();
 
-        assert!(app.world().get::<Neighbors>(e1).is_some());
-        assert!(
+        assert!(app.world().get::<Neighbors>(probe).is_some());
+        assert_eq!(
             app.world()
-                .get::<Neighbors>(e1)
+                .get::<Neighbors>(probe)
                 .unwrap()
                 .same_layer
-                .iter()
-                .any(|n| n.entity == e2)
+                .len(),
+            16
         );
     }
 }
