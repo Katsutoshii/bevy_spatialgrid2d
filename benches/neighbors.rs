@@ -6,11 +6,11 @@ use bevy::{
     MinimalPlugins,
     app::App,
     state::app::{AppExtStates, StatesPlugin},
-    time::TimeUpdateStrategy,
+    time::{Time, TimeUpdateStrategy},
 };
 use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
 use bevy_spatialgrid2d::{
-    Collisions, EntitySetsGrid, NeighborRadius, Neighbors, SpatialGrid2dPlugin, SpatialGridSpec,
+    Collisions, NeighborRadius, Neighbors, SpatialGrid2dPlugin, SpatialGridSpec,
 };
 
 use criterion::{Bencher, Criterion, criterion_group, criterion_main};
@@ -40,7 +40,7 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
 
     bencher.iter(|| {
         app.update();
-        black_box(app.world().resource::<EntitySetsGrid>().spec.width);
+        black_box(app.world().resource::<Time>().elapsed());
     })
 }
 
