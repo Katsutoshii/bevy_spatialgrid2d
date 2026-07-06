@@ -21,13 +21,13 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         .insert_state(PhysicsSimulationState::Running)
         .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
         .insert_resource(SpatialGridSpec {
-            cols: 96,
-            rows: 96,
+            cols: 132,
+            rows: 132,
             width: 1.0,
         });
     app.update();
 
-    let step_size = 0.5;
+    let step_size = 1.0;
     app.world_mut().spawn_batch(
         (-64..64)
             .cartesian_product(-64..64)
@@ -36,7 +36,7 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
                 (
                     Position2::new(x as f32 * step_size, y as f32 * step_size),
                     Neighbors::default(),
-                    NeighborRadius(2.0),
+                    NeighborRadius(4.0),
                     Collisions::default(),
                     CircleCollider { radius: 1.0 },
                 )
@@ -47,7 +47,7 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         .spawn((
             Position2::new(0.0, 0.0),
             Neighbors::default(),
-            NeighborRadius(2.0),
+            NeighborRadius(4.0),
             Collisions::default(),
             CircleCollider { radius: 1.0 },
         ))

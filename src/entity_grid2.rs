@@ -61,7 +61,7 @@ impl EntityGridSystem {
 }
 
 /// Allows distinct layers to the entity grid.
-#[derive(Copy, Clone, Debug, Default, Reflect)]
+#[derive(Copy, Clone, Debug, Default, Reflect, PartialEq, Eq)]
 pub struct EntityGridLayer(pub usize);
 impl EntityGridLayer {
     pub const MAX_LAYER: Self = EntityGridLayer(8);
@@ -207,13 +207,13 @@ impl EntitySetsGrid {
     }
 
     /// Iterate over entities in a radius.
-    pub fn iter_entities_in_radius<'a>(
+    pub fn iter_entity_layers_in_radius<'a>(
         &'a self,
         position: Vec2,
         radius: f32,
         layers: &'a [EntityGridLayer],
-    ) -> EntityRadiusIterator<'a> {
-        EntityRadiusIterator::new(
+    ) -> EntityLayerRadiusIterator<'a> {
+        EntityLayerRadiusIterator::new(
             &self,
             layers,
             RowColIterator::new(self.spec, position, radius),
@@ -259,16 +259,17 @@ impl EntitySetsGrid {
 }
 
 /// Iterates over entities in a given radius.
-pub struct EntityRadiusIterator<'a> {
+pub struct EntityLayerRadiusIterator<'a> {
     grid: &'a EntitySetsGrid,
     layers: &'a [EntityGridLayer],
 
     rowcol: RowCol,
+    layer: EntityGridLayer,
     rowcol_iter: RowColIterator,
     layer_iter: Iter<'a, EntityGridLayer>,
     entity_iter: Iter<'a, Entity>,
 }
-impl<'a> EntityRadiusIterator<'a> {
+impl<'a> EntityLayerRadiusIterator<'a> {
     pub fn new(
         grid: &'a EntitySetsGrid,
         layers: &'a [EntityGridLayer],
@@ -277,6 +278,7 @@ impl<'a> EntityRadiusIterator<'a> {
         Self {
             grid,
             layers,
+            layer: EntityGridLayer::default(),
             rowcol: RowCol::default(),
             rowcol_iter,
             layer_iter: Iter::default(),
@@ -285,16 +287,17 @@ impl<'a> EntityRadiusIterator<'a> {
     }
 }
 
-impl<'a> Iterator for EntityRadiusIterator<'a> {
-    type Item = Entity;
+impl<'a> Iterator for EntityLayerRadiusIterator<'a> {
+    type Item = (Entity, EntityGridLayer);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(&entity) = self.entity_iter.next() {
-                return Some(entity);
+                return Some((entity, self.layer));
             }
 
             if let Some(&layer) = self.layer_iter.next() {
+                self.layer = layer;
                 self.entity_iter = self.grid[self.rowcol][layer].iter();
                 continue;
             }
