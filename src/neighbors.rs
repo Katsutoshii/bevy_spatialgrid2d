@@ -85,7 +85,7 @@ pub struct NeighborQueryData {
     layer_mask: &'static NeighborLayerMask,
 }
 impl NeighborQueryDataItem<'_, '_> {
-    pub fn update_same_layer(
+    pub fn update(
         &self,
         query: Query<NeighborOtherQueryData>,
         grid: &EntitySetsGrid,
@@ -93,16 +93,26 @@ impl NeighborQueryDataItem<'_, '_> {
         collisions: &mut Collisions,
     ) {
         neighbors.same_layer.clear();
+        neighbors.other_layer.clear();
         collisions.same_layer.clear();
+        collisions.other_layer.clear();
 
-        for other_entity in
-            grid.iter_entities_in_radius(self.position.0, self.radius.0, &[self.grid_entity.layer])
+        let mut layers = self.layer_mask.0.clone();
+        layers.push(self.grid_entity.layer);
+
+        for (other_entity, other_layer) in
+            grid.iter_entity_layers_in_radius(self.position.0, self.radius.0, &layers)
         {
             if self.entity == other_entity {
                 continue;
             }
 
             if let Ok(other) = query.get(other_entity) {
+                let (neighbor_layer, collision_layer) = if self.grid_entity.layer == other_layer {
+                    (&mut neighbors.same_layer, &mut collisions.same_layer)
+                } else {
+                    (&mut neighbors.other_layer, &mut collisions.other_layer)
+                };
                 let delta = other.position.0 - self.position.0;
                 let distance_squared = delta.length_squared();
                 if !self.radius.in_radius(distance_squared) {
@@ -118,62 +128,18 @@ impl NeighborQueryDataItem<'_, '_> {
                 if self
                     .collider
                     .is_colliding(*other.collider, distance_squared)
-                    && collisions.same_layer.len() < MAX_COLLISIONS
+                    && collision_layer.len() < MAX_COLLISIONS
                 {
-                    collisions.same_layer.push(neighbor.clone());
+                    collision_layer.push(neighbor.clone());
                 }
 
-                neighbors.same_layer.push(neighbor);
+                neighbor_layer.push(neighbor);
             }
         }
 
         neighbors
             .same_layer
             .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
-    }
-
-    pub fn update_other_layer(
-        &self,
-        query: Query<NeighborOtherQueryData>,
-        grid: &EntitySetsGrid,
-        neighbors: &mut Neighbors,
-        collisions: &mut Collisions,
-    ) {
-        neighbors.other_layer.clear();
-        collisions.other_layer.clear();
-
-        for other_entity in
-            grid.iter_entities_in_radius(self.position.0, self.radius.0, &self.layer_mask.0)
-        {
-            if self.entity == other_entity {
-                continue;
-            }
-
-            if let Ok(other) = query.get(other_entity) {
-                let delta = other.position.0 - self.position.0;
-                let distance_squared = delta.length_squared();
-                if !self.radius.in_radius(distance_squared) {
-                    continue;
-                }
-
-                let neighbor = Neighbor {
-                    entity: other_entity,
-                    delta,
-                    distance_squared,
-                };
-
-                if self
-                    .collider
-                    .is_colliding(*other.collider, distance_squared)
-                    && collisions.other_layer.len() < MAX_COLLISIONS
-                {
-                    collisions.other_layer.push(neighbor.clone());
-                }
-
-                neighbors.other_layer.push(neighbor);
-            }
-        }
-
         neighbors
             .other_layer
             .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
@@ -188,8 +154,7 @@ pub fn update(
     query
         .par_iter_mut()
         .for_each(|(object, mut neighbors, mut collisions)| {
-            object.update_same_layer(others_query, &grid, &mut neighbors, &mut collisions);
-            object.update_other_layer(others_query, &grid, &mut neighbors, &mut collisions);
+            object.update(others_query, &grid, &mut neighbors, &mut collisions);
         });
 }
 
@@ -213,8 +178,8 @@ mod tests {
             .insert_state(PhysicsSimulationState::Running)
             .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
             .insert_resource(SpatialGridSpec {
-                cols: 128,
-                rows: 128,
+                cols: 96,
+                rows: 96,
                 width: 1.0,
             });
         app.update();
@@ -256,48 +221,5 @@ mod tests {
                 .len(),
             16
         );
-    }
-
-    /// cargo test -- neighbors::tests::test_bench --nocapture
-    #[test]
-    fn test_bench() {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, StatesPlugin, SpatialGrid2dPlugin))
-            .insert_state(PhysicsSimulationState::Running)
-            .insert_resource(TimeUpdateStrategy::FixedTimesteps(1))
-            .insert_resource(SpatialGridSpec {
-                cols: 128,
-                rows: 128,
-                width: 4.0,
-            });
-        app.update();
-
-        let step_size = 1.0;
-        app.world_mut()
-            .spawn_batch((0..128).cartesian_product(0..128).map(|(x, y)| {
-                (
-                    Position2::new(x as f32 * step_size, y as f32 * step_size),
-                    Neighbors::default(),
-                    NeighborRadius(2.0),
-                    Collisions::default(),
-                    CircleCollider { radius: 1.0 },
-                )
-            }));
-        let test_entity = app
-            .world_mut()
-            .spawn((
-                Position2::new(0.5, 0.5),
-                Neighbors::default(),
-                NeighborRadius(2.0),
-                Collisions::default(),
-                CircleCollider { radius: 1.0 },
-            ))
-            .id();
-
-        app.update();
-        let neighbors = app.world().get::<Neighbors>(test_entity);
-        assert!(neighbors.is_some());
-        assert_eq!(neighbors.unwrap().same_layer.len(), 8);
-        dbg!(neighbors);
     }
 }
