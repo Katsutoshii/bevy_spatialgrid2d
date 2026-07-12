@@ -17,4 +17,5 @@ cargo run --example boids
 
 | bevy | bevy_spatialgrid2d |
 | ---- | ------------------ |
+| 0.19 | 0.19.1             |
 | 0.18 | 0.18.0             |
