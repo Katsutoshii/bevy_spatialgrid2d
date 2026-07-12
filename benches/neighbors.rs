@@ -9,8 +9,7 @@ use bevy::{
 };
 use bevy_newtonian2d::{CircleCollider, PhysicsSimulationState, Position2};
 use bevy_spatialgrid2d::{
-    Collisions, EntityGridLayer, NeighborLayerMask, NeighborRadius, Neighbors, SpatialGrid2dPlugin,
-    SpatialGridSpec,
+    Collisions, NeighborRadius, Neighbors, SpatialGrid2dPlugin, SpatialGridSpec,
 };
 
 use criterion::{Bencher, Criterion, criterion_group, criterion_main};
@@ -40,7 +39,6 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
                     NeighborRadius(4.0),
                     Collisions::default(),
                     CircleCollider { radius: 1.0 },
-                    NeighborLayerMask::new(&[EntityGridLayer(0)]),
                 )
             }),
     );
@@ -52,7 +50,6 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
             NeighborRadius(4.0),
             Collisions::default(),
             CircleCollider { radius: 1.0 },
-            NeighborLayerMask::new(&[EntityGridLayer(0)]),
         ))
         .id();
 
@@ -60,12 +57,8 @@ fn neighbor_bench(bencher: &mut Bencher<'_>) {
         app.update();
 
         let neighbors = app.world().get::<Neighbors>(probe).unwrap();
-        if neighbors.same_layer.len() != 44 {
-            panic!(
-                "Invalid neighbor count: {} != {}",
-                neighbors.same_layer.len(),
-                44
-            );
+        if neighbors.len() != 44 {
+            panic!("Invalid neighbor count: {} != {}", neighbors.len(), 44);
         }
     })
 }

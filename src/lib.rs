@@ -25,14 +25,10 @@ pub use grid2_shader::{
 };
 
 #[cfg(feature = "entity")]
-pub use entity_grid2::{
-    EntityGridEvent, EntityGridLayer, EntityGridSystem, EntitySet, EntitySetsGrid, GridEntity,
-};
+pub use entity_grid2::{EntityGridEvent, EntityGridSystem, EntitySet, EntitySetsGrid, GridEntity};
 
 #[cfg(feature = "neighbors")]
-pub use neighbors::{
-    Collisions, Neighbor, NeighborLayerMask, NeighborRadius, Neighbors, NeighborsSystem,
-};
+pub use neighbors::{Collisions, Neighbor, NeighborRadius, Neighbors, NeighborsSystem};
 
 #[cfg(feature = "sparse")]
 pub use sparse_grid2::SparseSpatialGrid2;
