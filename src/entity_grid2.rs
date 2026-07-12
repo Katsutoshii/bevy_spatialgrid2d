@@ -24,8 +24,6 @@ use bevy::{
 };
 use bevy_newtonian2d::{PhysicsSimulationState, Position2};
 
-use smallvec::SmallVec;
-
 use crate::spec::RowColIterator;
 use crate::{Aabb2, RowCol, SpatialGrid2, SpatialGridSpec, SpatialGridState, smallset::SmallSet};
 
@@ -76,9 +74,6 @@ impl EntityGridLayer {
         Self(7),
     ];
 }
-
-/// Utility type for representing a set of layers.
-pub type EntityGridLayers = SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>;
 
 #[derive(Default, Clone, Deref, DerefMut, Debug)]
 pub struct EntitySets([EntitySet; EntityGridLayer::MAX_LAYER.0]);
