@@ -1,4 +1,4 @@
-use crate::{EntityGridLayer, EntityGridSystem, EntitySetsGrid, GridEntity};
+use crate::{EntityGridSystem, EntitySetsGrid, GridEntity};
 use bevy::ecs::query::QueryData;
 use bevy::ecs::schedule::InternedSystemSet;
 use bevy::ecs::schedule::ScheduleConfigs;
@@ -47,34 +47,16 @@ pub const MAX_NEIGHBORS: usize = 16;
 pub const MAX_COLLISIONS: usize = 4;
 
 /// Neighbors for this entity in the current frame.
-#[derive(Component, Default, Reflect, Debug)]
+#[derive(Component, Default, Reflect, Debug, Deref, DerefMut)]
 #[reflect(Component)]
-#[require(NeighborRadius, GridEntity, NeighborLayerMask)]
-pub struct Neighbors {
-    pub same_layer: SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-    pub other_layer: SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-}
+#[require(NeighborRadius, GridEntity)]
+pub struct Neighbors(pub SmallVec<[Neighbor; MAX_NEIGHBORS]>);
 
 /// Collisions for this entity in the current frame.
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default, Reflect, Debug, Deref, DerefMut)]
 #[reflect(Component)]
-#[require(NeighborRadius, CircleCollider, GridEntity, NeighborLayerMask)]
-pub struct Collisions {
-    pub same_layer: SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-    pub other_layer: SmallVec<[Neighbor; MAX_NEIGHBORS]>,
-}
-
-/// Collisions for this entity in the current frame.
-#[derive(Component, Default, Reflect)]
-#[reflect(Component)]
-pub struct NeighborLayerMask(pub SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>);
-impl NeighborLayerMask {
-    pub fn new(layers: &[EntityGridLayer]) -> Self {
-        let mut vec = SmallVec::<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>::default();
-        vec.extend(layers.into_iter().copied());
-        Self(vec)
-    }
-}
+#[require(NeighborRadius, CircleCollider, GridEntity)]
+pub struct Collisions(pub SmallVec<[Neighbor; MAX_NEIGHBORS]>);
 
 #[derive(QueryData)]
 pub struct NeighborOtherQueryData {
@@ -89,7 +71,6 @@ pub struct NeighborQueryData {
     position: &'static Position2,
     collider: &'static CircleCollider,
     radius: &'static NeighborRadius,
-    layer_mask: &'static NeighborLayerMask,
 }
 impl NeighborQueryDataItem<'_, '_> {
     pub fn update(
@@ -99,24 +80,15 @@ impl NeighborQueryDataItem<'_, '_> {
         neighbors: &mut Neighbors,
         collisions: &mut Collisions,
     ) {
-        neighbors.same_layer.clear();
-        neighbors.other_layer.clear();
-        collisions.same_layer.clear();
-        collisions.other_layer.clear();
+        neighbors.clear();
+        collisions.clear();
 
-        for (other_entity, other_layer) in
-            grid.iter_entity_layers_in_radius(self.position.0, self.radius.0, &self.layer_mask.0)
-        {
+        for other_entity in grid.iter_entities_in_radius(self.position.0, self.radius.0) {
             if self.entity == other_entity {
                 continue;
             }
 
             if let Ok(other) = query.get(other_entity) {
-                let (neighbor_layer, collision_layer) = if self.grid_entity.layer == other_layer {
-                    (&mut neighbors.same_layer, &mut collisions.same_layer)
-                } else {
-                    (&mut neighbors.other_layer, &mut collisions.other_layer)
-                };
                 let delta = other.position.0 - self.position.0;
                 let distance_squared = delta.length_squared();
                 if !self.radius.in_radius(distance_squared) {
@@ -132,20 +104,15 @@ impl NeighborQueryDataItem<'_, '_> {
                 if self
                     .collider
                     .is_colliding(*other.collider, distance_squared)
-                    && collision_layer.len() < MAX_COLLISIONS
+                    && collisions.len() < MAX_COLLISIONS
                 {
-                    collision_layer.push(neighbor.clone());
+                    collisions.push(neighbor.clone());
                 }
 
-                neighbor_layer.push(neighbor);
+                neighbors.push(neighbor);
             }
         }
-        neighbors
-            .same_layer
-            .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
-        neighbors
-            .other_layer
-            .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
+        neighbors.sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
     }
 }
 
@@ -216,13 +183,6 @@ mod tests {
         app.update();
 
         assert!(app.world().get::<Neighbors>(probe).is_some());
-        assert_eq!(
-            app.world()
-                .get::<Neighbors>(probe)
-                .unwrap()
-                .same_layer
-                .len(),
-            16
-        );
+        assert_eq!(app.world().get::<Neighbors>(probe).unwrap().len(), 16);
     }
 }

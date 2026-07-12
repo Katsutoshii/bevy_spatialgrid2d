@@ -1,4 +1,3 @@
-use std::ops::{Index, IndexMut};
 use std::slice::Iter;
 
 use bevy::{
@@ -58,37 +57,6 @@ impl EntityGridSystem {
     }
 }
 
-/// Allows distinct layers to the entity grid.
-#[derive(Copy, Clone, Debug, Default, Reflect, PartialEq, Eq)]
-pub struct EntityGridLayer(pub usize);
-impl EntityGridLayer {
-    pub const MAX_LAYER: Self = EntityGridLayer(7);
-    pub const ALL_LAYERS: [Self; Self::MAX_LAYER.0 + 1] = [
-        Self(0),
-        Self(1),
-        Self(2),
-        Self(3),
-        Self(4),
-        Self(5),
-        Self(6),
-        Self(7),
-    ];
-}
-
-#[derive(Default, Clone, Deref, DerefMut, Debug)]
-pub struct EntitySets([EntitySet; EntityGridLayer::MAX_LAYER.0]);
-impl Index<EntityGridLayer> for EntitySets {
-    type Output = EntitySet;
-    fn index(&self, i: EntityGridLayer) -> &Self::Output {
-        &self.0[i.0]
-    }
-}
-impl IndexMut<EntityGridLayer> for EntitySets {
-    fn index_mut(&mut self, i: EntityGridLayer) -> &mut Self::Output {
-        &mut self.0[i.0]
-    }
-}
-
 /// Component to track an entity in the grid.
 /// Holds its cell position so it can move/remove itself from the grid.
 #[derive(Component, Reflect, Copy, Clone, Default, Debug)]
@@ -96,14 +64,13 @@ impl IndexMut<EntityGridLayer> for EntitySets {
 #[component(on_remove = GridEntity::on_remove)]
 pub struct GridEntity {
     pub rowcol: Option<RowCol>,
-    pub layer: EntityGridLayer,
 }
 impl GridEntity {
     pub fn on_remove(mut world: DeferredWorld, context: HookContext) {
         let grid_entity = *world.get::<GridEntity>(context.entity).unwrap();
         let mut grid = world.resource_mut::<EntitySetsGrid>();
         let remove_event = if let Some(rowcol) = grid_entity.rowcol {
-            grid.remove(context.entity, grid_entity.layer, rowcol)
+            grid.remove(context.entity, rowcol)
         } else {
             let entity = context.entity;
             warn!("{entity} was missing rowcol on delete");
@@ -121,16 +88,14 @@ impl GridEntity {
         for (entity, mut grid_entity, position) in &mut query {
             // If on the grid, update rowcol to match the position.
             if let Some(rowcol) = grid.to_rowcol(position.0) {
-                if let Some(event) =
-                    grid.update(entity, grid_entity.layer, grid_entity.rowcol, rowcol)
-                {
+                if let Some(event) = grid.update(entity, grid_entity.rowcol, rowcol) {
                     grid_entity.rowcol = event.rowcol;
                     event_writer.write(event);
                 }
             }
             // If off the grid, remove the entity from the grid.
             else if let Some(prev_rowcol) = grid_entity.rowcol {
-                grid.remove(entity, grid_entity.layer, prev_rowcol);
+                grid.remove(entity, prev_rowcol);
                 grid_entity.rowcol = None;
             }
         }
@@ -141,7 +106,6 @@ impl GridEntity {
 #[derive(Message, Debug)]
 pub struct EntityGridEvent {
     pub entity: Entity,
-    pub layer: EntityGridLayer,
     pub prev_rowcol: Option<RowCol>,
     pub prev_empty: bool,
     pub rowcol: Option<RowCol>,
@@ -150,7 +114,6 @@ impl Default for EntityGridEvent {
     fn default() -> Self {
         Self {
             entity: Entity::PLACEHOLDER,
-            layer: EntityGridLayer::default(),
             prev_rowcol: None,
             prev_empty: false,
             rowcol: Some((0, 0)),
@@ -159,7 +122,7 @@ impl Default for EntityGridEvent {
 }
 
 #[derive(Resource, Default, Deref, DerefMut, Debug)]
-pub struct EntitySetsGrid(SpatialGrid2<EntitySets>);
+pub struct EntitySetsGrid(SpatialGrid2<EntitySet>);
 
 impl EntitySetsGrid {
     pub fn resize_on_change(mut grid: ResMut<Self>, spec: Res<SpatialGridSpec>) {
@@ -170,7 +133,6 @@ impl EntitySetsGrid {
     pub fn update(
         &mut self,
         entity: Entity,
-        layer: EntityGridLayer,
         prev_rowcol: Option<RowCol>,
         rowcol: RowCol,
     ) -> Option<EntityGridEvent> {
@@ -183,16 +145,15 @@ impl EntitySetsGrid {
             }
 
             if let Some(entities) = self.get_mut(prev_rowcol) {
-                entities[layer].remove(&entity);
-                prev_empty = entities[layer].is_empty();
+                entities.remove(&entity);
+                prev_empty = entities.is_empty();
             }
         }
 
         if let Some(entities) = self.get_mut(rowcol) {
-            entities[layer].insert(entity);
+            entities.insert(entity);
             return Some(EntityGridEvent {
                 entity,
-                layer,
                 prev_rowcol,
                 prev_empty,
                 rowcol: Some(rowcol),
@@ -202,34 +163,22 @@ impl EntitySetsGrid {
     }
 
     /// Iterate over entities in a radius.
-    pub fn iter_entity_layers_in_radius<'a>(
+    pub fn iter_entities_in_radius<'a>(
         &'a self,
         position: Vec2,
         radius: f32,
-        layers: &'a [EntityGridLayer],
-    ) -> EntityLayerRadiusIterator<'a> {
-        EntityLayerRadiusIterator::new(
-            &self,
-            layers,
-            RowColIterator::new(self.spec, position, radius),
-        )
+    ) -> EntityRadiusIterator<'a> {
+        EntityRadiusIterator::new(&self, RowColIterator::new(self.spec, position, radius))
     }
 
     /// Remove an entity from the grid entirely.
-    pub fn remove(
-        &mut self,
-        entity: Entity,
-        layer: EntityGridLayer,
-        rowcol: RowCol,
-    ) -> Option<EntityGridEvent> {
+    pub fn remove(&mut self, entity: Entity, rowcol: RowCol) -> Option<EntityGridEvent> {
         if let Some(entities) = self.get_mut(rowcol) {
-            let layer_entities = &mut entities[layer];
-            layer_entities.remove(&entity);
+            entities.remove(&entity);
             return Some(EntityGridEvent {
                 entity,
-                layer,
                 prev_rowcol: Some(rowcol),
-                prev_empty: layer_entities.is_empty(),
+                prev_empty: entities.is_empty(),
                 rowcol: None,
             });
         } else {
@@ -244,9 +193,7 @@ impl EntitySetsGrid {
 
         for rowcol in self.get_in_aabb(aabb) {
             if let Some(entities) = self.get(rowcol) {
-                for layer_entities in entities.iter() {
-                    result.extend(layer_entities.iter());
-                }
+                result.extend(entities.iter());
             }
         }
         result.into_iter().collect()
@@ -254,52 +201,36 @@ impl EntitySetsGrid {
 }
 
 /// Iterates over entities in a given radius.
-pub struct EntityLayerRadiusIterator<'a> {
+pub struct EntityRadiusIterator<'a> {
     grid: &'a EntitySetsGrid,
-    layers: &'a [EntityGridLayer],
 
     rowcol: RowCol,
-    layer: EntityGridLayer,
     rowcol_iter: RowColIterator,
-    layer_iter: Iter<'a, EntityGridLayer>,
     entity_iter: Iter<'a, Entity>,
 }
-impl<'a> EntityLayerRadiusIterator<'a> {
-    pub fn new(
-        grid: &'a EntitySetsGrid,
-        layers: &'a [EntityGridLayer],
-        rowcol_iter: RowColIterator,
-    ) -> Self {
+impl<'a> EntityRadiusIterator<'a> {
+    pub fn new(grid: &'a EntitySetsGrid, rowcol_iter: RowColIterator) -> Self {
         Self {
             grid,
-            layers,
-            layer: EntityGridLayer::default(),
             rowcol: RowCol::default(),
             rowcol_iter,
-            layer_iter: Iter::default(),
             entity_iter: Iter::default(),
         }
     }
 }
 
-impl<'a> Iterator for EntityLayerRadiusIterator<'a> {
-    type Item = (Entity, EntityGridLayer);
+impl<'a> Iterator for EntityRadiusIterator<'a> {
+    type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(&entity) = self.entity_iter.next() {
-                return Some((entity, self.layer));
-            }
-
-            if let Some(&layer) = self.layer_iter.next() {
-                self.layer = layer;
-                self.entity_iter = self.grid[self.rowcol][layer].iter();
-                continue;
+                return Some(entity);
             }
 
             if let Some(rowcol) = self.rowcol_iter.next() {
                 self.rowcol = rowcol;
-                self.layer_iter = self.layers.iter();
+                self.entity_iter = self.grid[self.rowcol].iter();
                 continue;
             }
 

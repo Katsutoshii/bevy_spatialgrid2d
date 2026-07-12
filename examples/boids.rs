@@ -276,7 +276,7 @@ impl BoidQueryDataItem<'_, '_> {
         let mut cohesion_force = Force2::ZERO;
 
         // Boids in the same layer apply separation, alignment, and cohesion forces.
-        for neighbor in self.neighbors.same_layer.iter() {
+        for neighbor in self.neighbors.iter() {
             let Ok((other_boid, other_radius, other_velocity)) = others.get(neighbor.entity) else {
                 continue;
             };
@@ -294,19 +294,9 @@ impl BoidQueryDataItem<'_, '_> {
             cohesion_force += other_boid.cohesion_force(delta_norm);
         }
 
-        // Boids in other layers only apply separation.
-        for neighbor in self.neighbors.other_layer.iter() {
-            let Ok((other_boid, _, _)) = others.get(neighbor.entity) else {
-                continue;
-            };
-            let delta_norm = neighbor.delta.normalize_or_zero();
-            separation_force +=
-                other_boid.separation_force(*self.collider, -delta_norm, neighbor.distance_squared);
-        }
-
         let mut total_force = Force2::ZERO;
-        if !self.neighbors.same_layer.is_empty() {
-            let neighbor_count = self.neighbors.same_layer.len() as f32 + 1.0;
+        if !self.neighbors.is_empty() {
+            let neighbor_count = self.neighbors.len() as f32 + 1.0;
             total_force += alignment_force * (1.0 / neighbor_count);
             total_force += cohesion_force * (1.0 / neighbor_count);
         }
