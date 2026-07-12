@@ -62,8 +62,8 @@ impl EntityGridSystem {
 #[derive(Copy, Clone, Debug, Default, Reflect, PartialEq, Eq)]
 pub struct EntityGridLayer(pub usize);
 impl EntityGridLayer {
-    pub const MAX_LAYER: Self = EntityGridLayer(8);
-    pub const ALL_LAYERS: [Self; Self::MAX_LAYER.0] = [
+    pub const MAX_LAYER: Self = EntityGridLayer(7);
+    pub const ALL_LAYERS: [Self; Self::MAX_LAYER.0 + 1] = [
         Self(0),
         Self(1),
         Self(2),

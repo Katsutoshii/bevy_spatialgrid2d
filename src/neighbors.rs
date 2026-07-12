@@ -68,6 +68,13 @@ pub struct Collisions {
 #[derive(Component, Default, Reflect)]
 #[reflect(Component)]
 pub struct NeighborLayerMask(pub SmallVec<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>);
+impl NeighborLayerMask {
+    pub fn new(layers: &[EntityGridLayer]) -> Self {
+        let mut vec = SmallVec::<[EntityGridLayer; EntityGridLayer::MAX_LAYER.0]>::default();
+        vec.extend(layers.into_iter().copied());
+        Self(vec)
+    }
+}
 
 #[derive(QueryData)]
 pub struct NeighborOtherQueryData {
@@ -97,11 +104,8 @@ impl NeighborQueryDataItem<'_, '_> {
         collisions.same_layer.clear();
         collisions.other_layer.clear();
 
-        let mut layers = self.layer_mask.0.clone();
-        layers.push(self.grid_entity.layer);
-
         for (other_entity, other_layer) in
-            grid.iter_entity_layers_in_radius(self.position.0, self.radius.0, &layers)
+            grid.iter_entity_layers_in_radius(self.position.0, self.radius.0, &self.layer_mask.0)
         {
             if self.entity == other_entity {
                 continue;
@@ -136,7 +140,6 @@ impl NeighborQueryDataItem<'_, '_> {
                 neighbor_layer.push(neighbor);
             }
         }
-
         neighbors
             .same_layer
             .sort_unstable_by_key(|neighbor| FloatOrd(neighbor.distance_squared));
