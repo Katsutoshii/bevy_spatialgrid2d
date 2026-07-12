@@ -26,8 +26,7 @@ pub use grid2_shader::{
 
 #[cfg(feature = "entity")]
 pub use entity_grid2::{
-    EntityGridEvent, EntityGridLayer, EntityGridLayers, EntityGridSystem, EntitySet,
-    EntitySetsGrid, GridEntity,
+    EntityGridEvent, EntityGridLayer, EntityGridSystem, EntitySet, EntitySetsGrid, GridEntity,
 };
 
 #[cfg(feature = "neighbors")]
